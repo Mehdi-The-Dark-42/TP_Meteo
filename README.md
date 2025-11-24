@@ -138,9 +138,143 @@ python agent_meteo.py
 - Vérifiez votre crédit gratuit sur console.mistral.ai
 - Vérifiez que votre clé API est valide
 
+## Documentation technique
+
+Cette section décrit l'architecture, le flux de données, les points d'extension, la configuration et les bonnes pratiques pour développer et déployer l'agent conversationnel météo.
+
+### Architecture générale
+
+- **Frontend** : page web servie par Flask (`templates/index.html`) qui envoie les messages utilisateur vers l'API `/chat`.
+- **Backend** : application Flask (`app.py`) exposant les endpoints, et la classe `AgentMeteo` (`agent_meteo.py`) qui orchestre :
+  - l'extraction du nom de la ville via Mistral AI;
+  - l'appel à l'API OpenWeatherMap pour récupérer les données météo;
+  - la génération d'une réponse naturelle via Mistral AI.
+- **Dépendances externes** : Mistral AI (SDK `mistralai`), OpenWeatherMap (HTTP REST), `requests`, `python-dotenv`.
+
+### Composants principaux
+
+- `app.py`
+  - Endpoints :
+    - `GET /` : page d'accueil (interface et bannière CNIL).
+    - `POST /chat` : reçoit JSON `{ "message": "..." }`, renvoie JSON de la réponse du bot.
+    - `GET /stats` : compteur anonyme d'utilisation (`total_requetes`).
+  - Vérifie la présence des clés API au démarrage et lance le serveur Flask.
+
+- `agent_meteo.py`
+  - Classe `AgentMeteo` exposant `traiter_message(message)`.
+  - Méthodes clefs :
+    - `extraire_ville(message)` : interroge Mistral pour extraire la ville (format attendu JSON).
+    - `obtenir_meteo(ville)` : appelle OpenWeatherMap et normalise les champs retournés.
+    - `generer_reponse(meteo_data)` : demande à Mistral une formulation naturelle.
+
+### Flux de données (simplifié)
+
+1. L'utilisateur saisit un message dans l'UI et l'envoie.
+2. Le frontend POST `/chat` avec `{ "message": "..." }`.
+3. `AgentMeteo.traiter_message` appelle `extraire_ville` (Mistral).
+4. Si une ville est extraite : `obtenir_meteo` (OpenWeatherMap).
+5. Si les données météo sont valides : `generer_reponse` (Mistral).
+6. Le backend renvoie `{ success, message, data? }` au frontend.
+
+### Endpoints et payloads
+
+- `POST /chat`
+  - Requête : `Content-Type: application/json` body `{ "message": "Quel temps à Lyon ?" }`.
+  - Réponses possibles :
+    - Succès :
+      {
+        "success": true,
+        "message": "...réponse utilisateur...",
+        "data": { /* données météo normalisées */ }
+      }
+    - Erreur / demande de précision :
+      {
+        "success": false,
+        "message": "Précise la ville, s'il te plaît."
+      }
+
+- `GET /stats` : renvoie `{ "total_requetes": <nombre> }` (anonyme, pas d'identifiants).
+
+### Variables d'environnement
+
+Créez un fichier `.env` (copier `.env.example`) et ajoutez :
+
+```
+MISTRAL_API_KEY=votre_cle_mistral
+OPENWEATHER_API_KEY=votre_cle_openweather
+```
+
+Ces clés sont lues via `python-dotenv` au démarrage.
+
+### Sécurité et conformité CNIL
+
+- Minimisation : seules les données strictement nécessaires sont traitées (nom de la ville).
+- Pas de persistance : aucune conversation n'est stockée sur le serveur.
+- Pas de cookies de tracking ni d'analytics intégrés.
+- Les clés API sont conservées en variables d'environnement (fichier `.env` ignoré par git).
+- Transparence : l'agent se présente comme un robot (voir `system_prompt` dans `AgentMeteo`).
+
+Bonnes pratiques recommandées :
+- Restreindre l'accès réseau aux services (config firewall) en production.
+- Utiliser des secrets manager (Vault, AWS Secrets Manager) pour la production.
+
+### Points d'extension et personnalisation
+
+- Remplacer le modèle Mistral : modifier `self.model` dans `agent_meteo.py`.
+- Ajouter historisation (optionnelle) : insérer une couche DB et anonymiser/agréger les logs.
+- Support multi-langue : changer `lang` et adapter les prompts dans `agent_meteo.py`.
+- Ajouter fallback si Mistral indisponible : implémenter un générateur de réponses local.
+
+### Exemples d'utilisation (CLI / curl)
+
+Envoyer une requête de test :
+
+```bash
+curl -X POST http://localhost:5000/chat \
+  -H "Content-Type: application/json" \
+  -d '{"message":"Quel temps fait-il à Paris ?"}'
+```
+
+Vérifier les statistiques anonymes :
+
+```bash
+curl http://localhost:5000/stats
+```
+
+### Tests locaux rapides
+
+- Tester directement l'agent (script de test intégré) :
+
+```bash
+python agent_meteo.py
+```
+
+- Démarrer le serveur Flask :
+
+```bash
+python app.py
+```
+
+### Débogage et logs
+
+- Les impressions (`print`) dans `app.py` et `agent_meteo.py` fournissent des messages d'erreur basiques.
+- Pour une mise en production, remplacer `print` par un logger structuré (`logging`), et activer un niveau `INFO`/`ERROR`.
+
+### Déploiement (conseils)
+
+- Conteneurisation : créer un `Dockerfile` minimal exposant le port 5000.
+- Variables d'environnement injectées via le runtime (Kubernetes secrets / Docker secrets).
+- Ne pas exposer d'interface d'administration sans authentification.
+
+---
+
 ## 📝 Licence
 
 Ce projet est à but éducatif dans le cadre du BTS SIO SLAM.
+
+## Aperçu Application
+
+![mehdiddy](cap1.png)
 
 ---
 
